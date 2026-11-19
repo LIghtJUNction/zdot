@@ -6,7 +6,7 @@ are in [linux-x86_64.json](benchmarks/linux-x86_64.json).
 
 | Measurement | Result | Scope |
 | --- | ---: | --- |
-| Installed executable | 54,328 bytes (53.05 KiB) | Stripped static ELF; no libc or dynamic loader |
+| Measured executable | 54,328 bytes (53.05 KiB) | Stripped static ELF; no libc or dynamic loader |
 | Version command, median | 0.227 ms | 50 warm runs including Python parent spawn and wait |
 | Version command, p95 | 0.348 ms | Same 50-run sample |
 | JSON plan, median | 4.493 ms | 128 valid mappings with long names; 50 warm runs |

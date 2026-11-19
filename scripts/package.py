@@ -22,6 +22,10 @@ files = [
     (ROOT / "packaging/man/zdot.1", "share/man/man1/zdot.1", 0o644),
     (ROOT / "completions/_zdot", "share/zsh/site-functions/_zdot", 0o644),
     (ROOT / "README.md", "share/doc/zdot/README.md", 0o644),
+    (ROOT / "docs/design.md", "share/doc/zdot/docs/design.md", 0o644),
+    (ROOT / "docs/performance.md", "share/doc/zdot/docs/performance.md", 0o644),
+    (ROOT / "docs/benchmarks/linux-x86_64.json", "share/doc/zdot/docs/benchmarks/linux-x86_64.json", 0o644),
+    (ROOT / "CONTRIBUTING.md", "share/doc/zdot/CONTRIBUTING.md", 0o644),
     (ROOT / "LICENSE", "share/licenses/zdot/LICENSE", 0o644),
 ]
 with output.open("wb") as raw, gzip.GzipFile(fileobj=raw, mode="wb", filename="", mtime=0) as gz:
