@@ -16,6 +16,7 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--runs", type=int, default=50)
+parser.add_argument("--build-note", default="Local release build; consult toolchain configuration")
 parser.add_argument("--output", type=Path, default=ROOT / "bench-results.json")
 args = parser.parse_args()
 if not 5 <= args.runs <= 1000:
@@ -53,6 +54,7 @@ with tempfile.TemporaryDirectory(prefix="zdot-benchmark-") as temporary:
         "schema": "zdot.benchmark.v1",
         "measured_at": datetime.now(timezone.utc).isoformat(),
         "architecture": platform.machine(),
+        "build_note": args.build_note,
         "rustc": subprocess.check_output(["rustc", "--version"], cwd=ROOT, text=True).strip(),
         "version": subprocess.check_output([str(binary), "--version"], text=True).strip(),
         "binary_bytes": binary.stat().st_size,

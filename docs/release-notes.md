@@ -1,4 +1,4 @@
-# zdot 0.1
+# zdot 0.1.1
 
 Initial Linux release of the standalone dotfile manager used by oh-my-ztty.
 
@@ -11,3 +11,5 @@ Initial Linux release of the standalone dotfile manager used by oh-my-ztty.
 
 See the README for the filesystem transaction boundary and current input limits.
 No claim of universal performance superiority is made.
+
+The initial v0.1.0 tag did not publish binaries. Release validation found that LLD retained an ELF interpreter and that ARM64 needs its own Linux open flags. Version 0.1.1 explicitly removes the interpreter and uses the verified architecture-specific flags.

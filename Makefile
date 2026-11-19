@@ -9,9 +9,9 @@ check:
 	cargo fmt --check
 	cargo test --lib --locked
 	cargo build --release --locked
+	python3 scripts/check_binary.py target/release/zdot
 	cargo clippy --lib --bin zdot --locked -- -D warnings
 	python3 tests/test_cli.py
-	python3 scripts/check_binary.py target/release/zdot
 
 test: check
 

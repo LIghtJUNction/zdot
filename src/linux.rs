@@ -6,8 +6,14 @@ use zdot::PATH_CAP;
 
 pub type Result<T> = core::result::Result<T, &'static str>;
 pub const AT_FDCWD: i32 = -100;
+#[cfg(target_arch = "x86_64")]
 pub const O_DIRECTORY: usize = 0x10000;
+#[cfg(target_arch = "aarch64")]
+pub const O_DIRECTORY: usize = 0x4000;
+#[cfg(target_arch = "x86_64")]
 pub const O_NOFOLLOW: usize = 0x20000;
+#[cfg(target_arch = "aarch64")]
+pub const O_NOFOLLOW: usize = 0x8000;
 pub const O_CLOEXEC: usize = 0x80000;
 pub const O_PATH: usize = 0x200000;
 pub const O_CREAT: usize = 64;

@@ -1,23 +1,24 @@
 {
   "schema": "zdot.benchmark.v1",
-  "measured_at": "2026-11-19T19:13:29.863813+00:00",
+  "measured_at": "2026-11-19T19:26:58.050837+00:00",
   "architecture": "x86_64",
+  "build_note": "Rust 1.100.0; Clang driver with LLD; explicit no-dynamic-linker",
   "rustc": "rustc 1.100.0 (0ef1bc386 2026-11-09)",
-  "version": "zdot 0.1.0",
-  "binary_bytes": 54328,
-  "binary_sha256": "bd1b7d16fef6205027e6fd888f44192fcc8be438d926e7857c41b314a49cd8af",
+  "version": "zdot 0.1.1",
+  "binary_bytes": 53776,
+  "binary_sha256": "bf12bfd0ece6fd29f4032b207d1b4e4728de6f789b2cd3a7c26cd79fc1ff3d14",
   "wall_time_scope": "Python parent spawn, native execution and wait; warm filesystem cache",
   "version_wall": {
     "runs": 50,
-    "median_ms": 0.2272885,
-    "p95_ms": 0.347507,
-    "minimum_ms": 0.161987
+    "median_ms": 0.241222,
+    "p95_ms": 0.307281,
+    "minimum_ms": 0.210363
   },
   "plan_128_wall": {
     "runs": 50,
-    "median_ms": 4.4933464999999995,
-    "p95_ms": 5.331567,
-    "minimum_ms": 3.655375
+    "median_ms": 5.222144,
+    "p95_ms": 9.332164,
+    "minimum_ms": 4.049375
   },
   "memory_scope": "128-entry JSON plan blocked on a 4096-byte stdout pipe; /proc smaps_rollup, not an idle daemon or worst-case bound",
   "memory_samples": [
@@ -26,15 +27,15 @@
       "pss_kib": 224
     },
     {
-      "rss_kib": 228,
-      "pss_kib": 224
+      "rss_kib": 232,
+      "pss_kib": 228
     },
     {
-      "rss_kib": 228,
-      "pss_kib": 224
+      "rss_kib": 232,
+      "pss_kib": 228
     }
   ],
-  "sampled_rss_kib_median": 228,
-  "sampled_pss_kib_median": 224,
-  "source_manifest_sha256": "d9f0f00b87c300abb9d10c510a75be3274c201bee35246fa095c230eda4fff2b"
+  "sampled_rss_kib_median": 232,
+  "sampled_pss_kib_median": 228,
+  "source_manifest_sha256": "9454953a9985b480d6a9c01683f335c0de38f9e501688e3cdeb09b03b8dfe1a2"
 }
