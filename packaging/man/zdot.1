@@ -1,0 +1,74 @@
+.TH ZDOT 1 "2026-11" "zdot" "User Commands"
+.SH NAME
+zdot \- explicit dotfile deployment and Git synchronization
+.SH SYNOPSIS
+.B zdot
+init --root REPO
+.br
+.B zdot
+plan|apply|status|remove --root REPO [--target HOME] [--profile FILE]
+.br
+.B zdot
+sync --root REPO status|pull|push
+.SH DESCRIPTION
+zdot maps files and directories from a repository into a target using symbolic
+links. Profiles contain source and destination separated by one tab. Both
+paths are relative. Blank lines and comments beginning with # are ignored.
+.SH OPTIONS
+.TP
+.B --root PATH
+Repository directory. Default is the current directory.
+.TP
+.B --target PATH
+Existing target directory. Default is HOME.
+.TP
+.B --profile FILE
+Repository-relative profile. Default is profile.zdot.
+.TP
+.B --backup
+Explicitly preserve conflicting destinations before linking. Valid for apply
+and plan. Backups are restored during remove.
+.TP
+.B --json
+Emit versioned JSON for plan, status or mutation results.
+.SH COMMANDS
+.TP
+.B init
+Create the repository directory, files directory and sample profile. Does not
+initialize Git or replace an existing profile.
+.TP
+.B plan
+Inspect every mapping without modifying the filesystem.
+.TP
+.B apply
+Deploy mappings. Reapplication keeps matching links. Conflicts are refused
+unless --backup is supplied.
+.TP
+.B status
+Inspect mappings, returning 3 when any destination is missing or conflicting.
+.TP
+.B remove
+Use the saved deployment profile to remove owned links and restore originals.
+A replaced destination prevents removal of the entire deployment.
+.TP
+.B sync
+Execute system Git status, pull --ff-only, or push with literal arguments.
+No commit, remote, merge strategy or credential is chosen automatically.
+.SH FILES
+.TP
+.I TARGET/.zdot-state
+Deployment ownership, saved profiles and preserved originals.
+.TP
+.I TARGET/.zdot.lock
+Stable target-wide cooperative lock file. No background process is started.
+.SH LIMITS
+Linux x86_64 or aarch64, kernel 4.11 or later, and /proc.
+Profiles are limited to 128 mappings and 65536 bytes.
+Parent traversal, symlink parents and symlink sources are rejected.
+Concurrent external mutation is outside the cooperative transaction model.
+.SH EXIT STATUS
+0 for success; 2 for input or filesystem failure; 3 for nonmatching status.
+The sync command preserves Git's exit status.
+.SH SEE ALSO
+.BR git (1),
+.BR symlink (7)

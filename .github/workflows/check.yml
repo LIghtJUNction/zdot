@@ -1,0 +1,14 @@
+name: Manual checks
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install toolchain
+        run: rustup toolchain install 1.100.0 --profile minimal --component rustfmt --component clippy
+      - name: Local-equivalent gate
+        run: make check

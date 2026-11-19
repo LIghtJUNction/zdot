@@ -1,0 +1,33 @@
+[package]
+name = "zdot"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.100"
+description = "Small, explicit dotfile deployments and Git synchronization"
+license = "MIT"
+repository = "https://github.com/LIghtJUNction/zdot"
+readme = "README.md"
+keywords = ["dotfiles", "linux", "no-std", "configuration"]
+categories = ["command-line-utilities", "no-std"]
+
+[workspace]
+resolver = "3"
+
+[dependencies]
+zclap = { version = "=0.1.4", default-features = false }
+
+[[bin]]
+name = "zdot"
+path = "src/main.rs"
+test = false
+bench = false
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+opt-level = "s"
+lto = "fat"
+codegen-units = 1
+strip = true

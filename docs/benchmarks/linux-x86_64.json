@@ -1,0 +1,40 @@
+{
+  "schema": "zdot.benchmark.v1",
+  "measured_at": "2026-11-19T19:13:29.863813+00:00",
+  "architecture": "x86_64",
+  "rustc": "rustc 1.100.0 (0ef1bc386 2026-11-09)",
+  "version": "zdot 0.1.0",
+  "binary_bytes": 54328,
+  "binary_sha256": "bd1b7d16fef6205027e6fd888f44192fcc8be438d926e7857c41b314a49cd8af",
+  "wall_time_scope": "Python parent spawn, native execution and wait; warm filesystem cache",
+  "version_wall": {
+    "runs": 50,
+    "median_ms": 0.2272885,
+    "p95_ms": 0.347507,
+    "minimum_ms": 0.161987
+  },
+  "plan_128_wall": {
+    "runs": 50,
+    "median_ms": 4.4933464999999995,
+    "p95_ms": 5.331567,
+    "minimum_ms": 3.655375
+  },
+  "memory_scope": "128-entry JSON plan blocked on a 4096-byte stdout pipe; /proc smaps_rollup, not an idle daemon or worst-case bound",
+  "memory_samples": [
+    {
+      "rss_kib": 228,
+      "pss_kib": 224
+    },
+    {
+      "rss_kib": 228,
+      "pss_kib": 224
+    },
+    {
+      "rss_kib": 228,
+      "pss_kib": 224
+    }
+  ],
+  "sampled_rss_kib_median": 228,
+  "sampled_pss_kib_median": 224,
+  "source_manifest_sha256": "d9f0f00b87c300abb9d10c510a75be3274c201bee35246fa095c230eda4fff2b"
+}

@@ -1,0 +1,11 @@
+#compdef zdot
+_arguments \
+  '1:command:(init plan apply status remove sync)' \
+  '2:sync operation:(status pull push)' \
+  '--root[dotfile repository]:directory:_directories' \
+  '--target[target directory]:directory:_directories' \
+  '--profile[repository-relative profile]:file:_files' \
+  '--backup[preserve conflicting destinations]' \
+  '--json[emit machine-readable output]' \
+  '(-h --help)'{-h,--help}'[show help]' \
+  '(-V --version)'{-V,--version}'[show version]'
