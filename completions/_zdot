@@ -5,6 +5,7 @@ _arguments \
   '--root[dotfile repository]:directory:_directories' \
   '--target[target directory]:directory:_directories' \
   '--profile[repository-relative profile]:file:_files' \
+  '--state-dir[absolute private journal directory]:directory:_directories' \
   '--backup[preserve conflicting destinations]' \
   '--json[emit machine-readable output]' \
   '(-h --help)'{-h,--help}'[show help]' \

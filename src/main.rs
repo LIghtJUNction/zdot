@@ -53,6 +53,7 @@ Options:
   --root PATH      Dotfile repository (default: current directory)
   --target PATH    Existing target directory (default: HOME)
   --profile FILE   Relative tab-separated manifest (default: profile.zdot)
+  --state-dir PATH Absolute private journal directory (default: TARGET/.zdot-state)
   --backup         Move conflicts to the deployment journal (apply/plan only)
   --json           Machine-readable plan, status or result
   -h, --help       Show this help
@@ -71,6 +72,7 @@ const CLI: Command<'static> = Command::new("zdot").args(&[
     Arg::value("root"),
     Arg::value("target"),
     Arg::value("profile"),
+    Arg::value("state-dir"),
     Arg::flag("backup"),
     Arg::flag("json"),
     Arg::flag("help").short('h'),
@@ -83,6 +85,7 @@ struct Options<'a> {
     root: &'a str,
     target: &'a str,
     profile: &'a str,
+    state_dir: &'a str,
     backup: bool,
     json: bool,
 }
@@ -138,6 +141,7 @@ fn run(args: &[&str], envp: *const *const u8) -> Result<i32> {
         root: ".",
         target: env(envp, "HOME").unwrap_or(""),
         profile: "profile.zdot",
+        state_dir: "",
         backup: false,
         json: false,
     };
@@ -177,6 +181,15 @@ fn run(args: &[&str], envp: *const *const u8) -> Result<i32> {
                 arg: "profile",
                 value,
             } => options.profile = value,
+            Event::Value {
+                arg: "state-dir",
+                value,
+            } => {
+                if value.is_empty() {
+                    return Err("--state-dir must be an absolute path");
+                }
+                options.state_dir = value;
+            }
             _ => {}
         }
     }
@@ -192,6 +205,9 @@ fn run(args: &[&str], envp: *const *const u8) -> Result<i32> {
     }
     if options.backup && !matches!(options.command, "apply" | "plan") {
         return Err("--backup is only valid for apply or plan");
+    }
+    if !options.state_dir.is_empty() && matches!(options.command, "init" | "sync") {
+        return Err("--state-dir is only valid for plan, apply, status or remove");
     }
     zdot::validate_relative(options.profile)?;
     if options.command == "init" {
@@ -210,10 +226,15 @@ fn run(args: &[&str], envp: *const *const u8) -> Result<i32> {
     }
     let target = linux::directory(options.target)?;
     let target_path = linux::canonical(target.0)?;
+    let storage = Storage::new(&options, root_path.as_str(), target_path.as_str())?;
     let mut owner = Path::from(root_path.as_str())?;
     owner.push("\n")?;
     owner.push(options.profile)?;
     owner.push("\n")?;
+    if storage.explicit {
+        owner.push(target_path.as_str())?;
+        owner.push("\n")?;
+    }
     let mut key = Path::new();
     write!(
         &mut key,
@@ -221,9 +242,17 @@ fn run(args: &[&str], envp: *const *const u8) -> Result<i32> {
         zdot::namespace(root_path.as_str(), options.profile)
     )
     .map_err(|_| "namespace overflow")?;
-    let state = open_state(target.0, key.as_str(), owner.as_str())?;
+    let state = open_state(&storage, key.as_str(), owner.as_str())?;
     if options.command == "remove" {
-        return remove(&options, root_path.as_str(), target.0, key.as_str(), state);
+        return remove(
+            &options,
+            root_path.as_str(),
+            target.0,
+            &storage,
+            key.as_str(),
+            owner.as_str(),
+            state,
+        );
     }
     let mut bytes = [0u8; MAX_PROFILE];
     let source_parent =
@@ -231,12 +260,14 @@ fn run(args: &[&str], envp: *const *const u8) -> Result<i32> {
     let len = linux::read_file(source_parent.fd.0, source_parent.name.as_str(), &mut bytes)?;
     let text = core::str::from_utf8(&bytes[..len]).map_err(|_| "profile must be UTF-8")?;
     let profile = Profile::parse(text)?;
+    storage.validate_profile(&profile, root_path.as_str(), target_path.as_str())?;
     let statuses = inspect(&profile, root.0, root_path.as_str(), target.0)?;
     if matches!(options.command, "plan" | "status") {
         output_plan(
             &options,
             root_path.as_str(),
             target_path.as_str(),
+            storage.path.as_str(),
             &profile,
             &statuses,
         );
@@ -256,6 +287,7 @@ fn run(args: &[&str], envp: *const *const u8) -> Result<i32> {
         &options,
         root_path.as_str(),
         target.0,
+        &storage,
         key.as_str(),
         owner.as_str(),
         state,
@@ -441,6 +473,7 @@ fn output_plan(
     options: &Options<'_>,
     root: &str,
     target: &str,
+    state_dir: &str,
     profile: &Profile<'_>,
     statuses: &[Status],
 ) {
@@ -451,6 +484,8 @@ fn output_plan(
         json_string(target);
         linux::print(1, b",\"profile\":");
         json_string(options.profile);
+        linux::print(1, b",\"state_dir\":");
+        json_string(state_dir);
         linux::print(1, b",\"entries\":[");
     }
     for (i, entry) in profile.entries().iter().enumerate() {
@@ -480,23 +515,111 @@ fn output_plan(
     }
 }
 
+/// Explicit recovery stores leave the target's top level free of metadata.
+/// Every path component uses O_NOFOLLOW; plan/status never create directories.
+struct Storage {
+    path: Path,
+    explicit: bool,
+}
+
+fn contains(parent: &str, child: &str) -> bool {
+    parent == "/"
+        || parent == child
+        || child
+            .strip_prefix(parent)
+            .is_some_and(|tail| tail.starts_with('/'))
+}
+
+fn overlaps(a: &str, b: &str) -> bool {
+    contains(a, b) || contains(b, a)
+}
+
+impl Storage {
+    fn new(options: &Options<'_>, root: &str, target: &str) -> Result<Self> {
+        let explicit = !options.state_dir.is_empty();
+        let path = if explicit {
+            let relative = options
+                .state_dir
+                .strip_prefix('/')
+                .ok_or("--state-dir must be an absolute path")?;
+            zdot::validate_relative(relative)?;
+            Path::from(options.state_dir)?
+        } else {
+            let mut value = Path::from(target)?;
+            value.join(".zdot-state")?;
+            value
+        };
+        if explicit && (overlaps(path.as_str(), root) || contains(path.as_str(), target)) {
+            return Err("state directory must not overlap the repository or contain the target");
+        }
+        Ok(Self { path, explicit })
+    }
+
+    fn open(&self, create: bool) -> Result<Option<Fd>> {
+        let mut directory = linux::directory("/")?;
+        for part in self.path.as_str()[1..].split('/') {
+            directory = match linux::openat(directory.0, part, O_DIRECTORY | O_NOFOLLOW, 0) {
+                Ok(fd) => fd,
+                Err(linux::ENOENT) if !create => return Ok(None),
+                Err(linux::ENOENT) => {
+                    match linux::mkdir(directory.0, part, 0o700) {
+                        Ok(()) => linux::fsync(directory.0)?,
+                        Err(linux::EEXIST) => {}
+                        Err(_) => return Err("cannot create private state directory"),
+                    }
+                    linux::openat(directory.0, part, O_DIRECTORY | O_NOFOLLOW, 0)
+                        .map_err(|_| "state directory changed while opening it")?
+                }
+                Err(_) => return Err("state path must contain only accessible real directories"),
+            };
+        }
+        linux::private_directory(directory.0)?;
+        Ok(Some(directory))
+    }
+
+    fn validate_profile(&self, profile: &Profile<'_>, root: &str, target: &str) -> Result<()> {
+        for entry in profile.entries() {
+            let source = source_path(root, entry)?;
+            let mut destination = Path::from(target)?;
+            destination.join(entry.destination)?;
+            if overlaps(self.path.as_str(), source.as_str())
+                || overlaps(self.path.as_str(), destination.as_str())
+            {
+                return Err("state directory must not overlap any source or destination");
+            }
+        }
+        Ok(())
+    }
+}
+
+fn lock_target(target: i32, storage: &Storage) -> Result<(Fd, Option<Fd>)> {
+    // Locking the directory coordinates different stores without a new dotfile.
+    let directory = linux::lock_directory(target)?;
+    // Default mode also keeps the lock contract used by older zdot binaries.
+    let legacy = if !storage.explicit || linux::exists(target, ".zdot.lock")? {
+        Some(linux::lock(target)?)
+    } else {
+        None
+    };
+    Ok((directory, legacy))
+}
+
 struct State {
     directory: Fd,
     backups: Fd,
     complete: bool,
 }
 
-fn open_state(target: i32, key: &str, owner: &str) -> Result<Option<State>> {
-    let base = match linux::openat(target, ".zdot-state", O_DIRECTORY | O_NOFOLLOW, 0) {
-        Ok(fd) => fd,
-        Err(linux::ENOENT) => return Ok(None),
-        Err(_) => return Err(".zdot-state must be an accessible real directory"),
+fn open_state(storage: &Storage, key: &str, owner: &str) -> Result<Option<State>> {
+    let Some(base) = storage.open(false)? else {
+        return Ok(None);
     };
     let directory = match linux::openat(base.0, key, O_DIRECTORY | O_NOFOLLOW, 0) {
         Ok(fd) => fd,
         Err(linux::ENOENT) => return Ok(None),
         Err(_) => return Err("deployment journal is not a real directory"),
     };
+    linux::private_directory(directory.0)?;
     let mut bytes = [0; 8192];
     let n = linux::read_file(directory.0, "owner", &mut bytes)?;
     if &bytes[..n] != owner.as_bytes() {
@@ -504,6 +627,7 @@ fn open_state(target: i32, key: &str, owner: &str) -> Result<Option<State>> {
     }
     let backups = linux::openat(directory.0, "backups", O_DIRECTORY | O_NOFOLLOW, 0)
         .map_err(|_| "deployment backup directory is missing or invalid")?;
+    linux::private_directory(backups.0)?;
     let complete = linux::exists(directory.0, "complete")?;
     Ok(Some(State {
         directory,
@@ -512,13 +636,8 @@ fn open_state(target: i32, key: &str, owner: &str) -> Result<Option<State>> {
     }))
 }
 
-fn create_state(target: i32, key: &str, owner: &str, text: &str) -> Result<State> {
-    match linux::mkdir(target, ".zdot-state", 0o700) {
-        Ok(()) | Err(linux::EEXIST) => {}
-        Err(_) => return Err("cannot create journal parent"),
-    }
-    let base = linux::openat(target, ".zdot-state", O_DIRECTORY | O_NOFOLLOW, 0)
-        .map_err(|_| "journal parent must be a real directory")?;
+fn create_state(storage: &Storage, key: &str, owner: &str, text: &str) -> Result<State> {
+    let base = storage.open(true)?.ok_or("cannot create state directory")?;
     linux::mkdir(base.0, key, 0o700)
         .map_err(|_| "deployment journal already exists or cannot be created")?;
     let directory = linux::openat(base.0, key, O_DIRECTORY | O_NOFOLLOW, 0)
@@ -530,7 +649,6 @@ fn create_state(target: i32, key: &str, owner: &str, text: &str) -> Result<State
             .map_err(|_| "cannot create backup directory")?;
         linux::fsync(directory.0)?;
         linux::fsync(base.0)?;
-        linux::fsync(target)?;
         Ok(())
     })();
     if let Err(error) = written {
@@ -560,6 +678,7 @@ fn apply(
     options: &Options<'_>,
     root: &str,
     target: i32,
+    storage: &Storage,
     key: &str,
     owner: &str,
     state: Option<State>,
@@ -594,7 +713,7 @@ fn apply(
             }
         }
     }
-    let _lock = linux::lock(target)?;
+    let _lock = lock_target(target, storage)?;
     // Repeat the read-only preflight after acquiring our cooperative lock.
     for (i, entry) in profile.entries().iter().enumerate() {
         let source = source_path(root, entry)?;
@@ -602,7 +721,7 @@ fn apply(
             return Err("destination changed since preflight; retry the command");
         }
     }
-    let current_state = open_state(target, key, owner)?;
+    let current_state = open_state(storage, key, owner)?;
     if current_state.is_some() != state.is_some() {
         return Err("deployment journal changed since preflight; retry");
     }
@@ -616,7 +735,7 @@ fn apply(
     let new_state = current_state.is_none();
     let state = match current_state {
         Some(state) => state,
-        None => create_state(target, key, owner, text)?,
+        None => create_state(storage, key, owner, text)?,
     };
     let mut linked = [false; MAX_ENTRIES];
     let mut moved = [false; MAX_ENTRIES];
@@ -684,7 +803,7 @@ fn apply(
                 cleanup_dirs(target, entry.destination, created_dirs[i]);
             }
             if clean && new_state {
-                let _ = clear_state(target, key, &state);
+                let _ = clear_state(storage, key, &state);
             }
             if !clean {
                 return Err(
@@ -714,7 +833,9 @@ fn remove(
     options: &Options<'_>,
     root: &str,
     target: i32,
+    storage: &Storage,
     key: &str,
+    owner: &str,
     state: Option<State>,
 ) -> Result<i32> {
     let Some(state) = state else {
@@ -725,6 +846,7 @@ fn remove(
     let len = linux::read_file(state.directory.0, "profile", &mut bytes)?;
     let text = core::str::from_utf8(&bytes[..len]).map_err(|_| "journal profile is not UTF-8")?;
     let profile = Profile::parse(text)?;
+    storage.validate_profile(&profile, root, linux::canonical(target)?.as_str())?;
     let mut statuses = [Status::Missing; MAX_ENTRIES];
     let mut backup = [false; MAX_ENTRIES];
     for (i, entry) in profile.entries().iter().enumerate() {
@@ -736,18 +858,14 @@ fn remove(
             return Err("destination was replaced; remove preserves it and all other mappings");
         }
     }
-    let _lock = linux::lock(target)?;
+    let _lock = lock_target(target, storage)?;
     for (i, entry) in profile.entries().iter().enumerate() {
         let source = source_path(root, entry)?;
         if destination_status(target, entry, source.as_str())? != statuses[i] {
             return Err("destination changed since preflight; retry the command");
         }
     }
-    let mut owner = Path::from(root)?;
-    owner.push("\n")?;
-    owner.push(options.profile)?;
-    owner.push("\n")?;
-    let current_state = open_state(target, key, owner.as_str())?
+    let current_state = open_state(storage, key, owner)?
         .ok_or("deployment journal changed since preflight; retry")?;
     let mut current_bytes = [0; MAX_PROFILE];
     let current_len = linux::read_file(current_state.directory.0, "profile", &mut current_bytes)?;
@@ -820,22 +938,21 @@ fn remove(
             "remove interrupted; journal retained for recovery"
         });
     }
-    clear_state(target, key, &state)?;
+    clear_state(storage, key, &state)?;
     result(options, "remove", changes?);
     Ok(0)
 }
 
-fn clear_state(target: i32, key: &str, state: &State) -> Result<()> {
+fn clear_state(storage: &Storage, key: &str, state: &State) -> Result<()> {
     // Check backups first. Nonempty backups are never discarded.
     linux::unlink(state.directory.0, "backups", true)?;
     linux::unlink(state.directory.0, "complete", false)?;
     linux::unlink(state.directory.0, "profile", false)?;
     linux::unlink(state.directory.0, "owner", false)?;
-    let base = linux::openat(target, ".zdot-state", O_DIRECTORY | O_NOFOLLOW, 0)
-        .map_err(|_| "journal parent disappeared")?;
+    let base = storage.open(false)?.ok_or("journal parent disappeared")?;
     linux::unlink(base.0, key, true)?;
     linux::fsync(base.0)?;
-    // .zdot-state and .zdot.lock stay to serialize concurrent deployments.
+    // Keep the empty store available for later deployments.
     Ok(())
 }
 

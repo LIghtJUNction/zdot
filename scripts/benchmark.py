@@ -62,6 +62,8 @@ with tempfile.TemporaryDirectory(prefix="zdot-benchmark-") as temporary:
         "wall_time_scope": "Python parent spawn, native execution and wait; warm filesystem cache",
         "version_wall": timings([str(binary), "--version"]),
         "plan_128_wall": timings(command),
+        "external_state_plan_128_wall": timings(command + [
+            "--state-dir", str(target / ".local/state/zdot/benchmark")]),
         "memory_scope": "128-entry JSON plan blocked on a 4096-byte stdout pipe; /proc smaps_rollup, not an idle daemon or worst-case bound",
     }
     memory = []

@@ -48,6 +48,33 @@ Repeated application keeps matching links. `remove` uses the saved deployment
 profile, restores originals, and refuses to remove a destination you replaced.
 Edits made through a managed symlink edit the repository's source file.
 
+## Keep recovery data in XDG state
+
+Use one stable, private state directory for a deployment when the home directory
+should contain only the chosen configuration links:
+
+```sh
+zdot plan --root "$HOME/dotfiles" --target "$HOME" \
+  --state-dir "$HOME/.local/state/zdot/desktop" --backup --json
+zdot apply --root "$HOME/dotfiles" --target "$HOME" \
+  --state-dir "$HOME/.local/state/zdot/desktop" --backup
+zdot status --root "$HOME/dotfiles" --target "$HOME" \
+  --state-dir "$HOME/.local/state/zdot/desktop"
+zdot remove --root "$HOME/dotfiles" --target "$HOME" \
+  --state-dir "$HOME/.local/state/zdot/desktop"
+```
+
+Pass the same `--state-dir` on every command. `plan` and `status` never create
+it. `apply` creates missing directories with mode `0700`; recovery metadata and
+original files stay there. This mode adds no `.zdot-state` or `.zdot.lock` to
+the target's top level. The JSON plan reports the selected `state_dir`.
+
+The state directory must be absolute, private, and outside the source repository
+and every managed source or destination. Existing directory components must be
+real directories. Original files move without copying, so `--backup` requires
+the state directory and those originals to share a filesystem. A failed move
+rolls back earlier changes. Omitting `--state-dir` keeps the original layout.
+
 ## Sync
 
 Initialize your repository and choose its remote using normal Git commands.
@@ -76,8 +103,10 @@ profile. No shell is used to construct Git arguments.
   source/destination containment are rejected.
 - Change a profile by removing its previous deployment, editing it, then applying
   it again. Keep the repository at its original path until removal.
-- Metadata stays in the target's `.zdot-state` directory. `.zdot.lock` serializes
-  cooperating zdot processes. These are never uploaded by zdot.
+- Metadata defaults to the target's `.zdot-state` directory; `--state-dir`
+  selects an explicit recovery store. A target directory lock serializes new
+  zdot processes. Default mode also retains the legacy `.zdot.lock` contract.
+  State is never uploaded by zdot.
 - Ordinary apply failures roll back newly created links and moved originals.
   An interrupted deployment retains its journal for `remove` recovery.
   Concurrent edits by other programs are outside this transaction model.

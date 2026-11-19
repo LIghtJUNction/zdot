@@ -21,10 +21,13 @@ and creates a journal.
 
 A journal namespace includes the canonical repository path and profile path.
 A separate owner record verifies both values, so a namespace hash collision
-does not grant ownership of another deployment. The saved profile remains
+does not grant ownership of another deployment. Explicit state stores also bind
+the canonical target path; another target cannot reuse the same journal. The saved profile remains
 available if the current profile changes or is deleted.
 
 Originals move into numbered backup slots using `renameat2(RENAME_NOREPLACE)`.
+The state store and originals must therefore share a filesystem; a cross-device
+move fails without silently copying or deleting an original.
 A new symlink never overwrites a newly appearing destination. Successful file
 and directory mutations are synchronized to disk. When an ordinary system call
 fails, links created in that attempt are removed, originals are moved back, and
@@ -48,9 +51,25 @@ repository directory available for removal. Changing the profile content does
 not lose the saved deployment; moving the repository requires removing and
 redeploying its links.
 
-The target retains an empty `.zdot-state` and the small `.zdot.lock` after
-removal. Keeping the lock inode prevents two cooperating processes from locking
-different files during concurrent operations. No process remains running.
+Default mode retains an empty `.zdot-state` and the small `.zdot.lock` after
+removal. An explicit `--state-dir` retains only its selected empty store. New
+versions lock the target directory itself, so different state directories do
+not create independent locks for the same target. Default mode also takes the
+legacy lock; explicit mode honors it if it already exists. No process remains
+running.
+
+The explicit state path is opened one component at a time with `O_NOFOLLOW`.
+Its final directory, journals and backup directories must be owned by the
+current effective user and inaccessible to group and other users. Parent
+directories are created with mode `0700` only during apply. The state path
+cannot contain the target or overlap the repository or any mapping. Plan and
+status check those conditions without creating directories. Removal validates
+the saved profile against the same state boundaries.
+
+A stable state path is part of a deployment's identity. Changing this argument
+does not migrate existing journals. Remove the old deployment with its original
+state path before choosing a new one. All clients of an explicit store must
+support `--state-dir`; an old binary does not know that store's recovery data.
 
 ## Transaction boundary
 
@@ -81,12 +100,16 @@ rejected, rather than growing memory usage without a bound.
 
 | Claim | Evidence |
 | --- | --- |
-| Preview does not write | Integration test compares an empty target before and after plan |
+| Preview does not write | Default and nested external-store tests compare paths before and after plan/status |
 | Reapplication is idempotent | Two applications report 1 then 0 changes per new mapping |
 | Conflicts preserve user data | File, directory, broken-link and replaced-target tests |
 | Symlink parents cannot redirect deployment | Source and destination parent fixtures |
 | Rollback works for an ordinary filesystem failure | A read-only destination forces failure after earlier links and backups |
-| Recovery uses saved state | Missing current profile and interrupted-backup tests |
+| Recovery uses saved state | Missing current profile and interrupted-backup tests for both layouts |
+| External state cannot target another deployment | Target owner, path containment, private-mode and symlink tests |
+| External state does not create home metadata | Roundtrip checks absence of top-level `.zdot-state` and `.zdot.lock` |
+| Different stores cooperate on one target | Directory flock and legacy-lock tests |
+| Cross-filesystem backups fail without data loss | Two-filesystem fixture verifies rollback after a failed move |
 | Git synchronization is real | Temporary local bare remote, push, pull and divergence rejection |
 | No dynamic runtime library is linked | `scripts/check_binary.py` inspects ELF headers and Cargo features |
 

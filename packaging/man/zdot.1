@@ -25,6 +25,13 @@ Existing target directory. Default is HOME.
 .B --profile FILE
 Repository-relative profile. Default is profile.zdot.
 .TP
+.B --state-dir PATH
+Absolute private recovery directory. Defaults to TARGET/.zdot-state.
+Pass the same path for plan, apply, status and remove. Plan and status never
+create directories. Apply creates missing state directories with mode 0700.
+The path must not overlap the repository or any managed source or destination.
+Backups use atomic moves and require the same filesystem as the original files.
+.TP
 .B --backup
 Explicitly preserve conflicting destinations before linking. Valid for apply
 and plan. Backups are restored during remove.
@@ -60,7 +67,9 @@ No commit, remote, merge strategy or credential is chosen automatically.
 Deployment ownership, saved profiles and preserved originals.
 .TP
 .I TARGET/.zdot.lock
-Stable target-wide cooperative lock file. No background process is started.
+Legacy target-wide cooperative lock file, retained in default mode.
+With --state-dir, a target directory lock avoids creating this file; an existing
+legacy lock is also honored. No background process is started.
 .SH LIMITS
 Linux x86_64 or aarch64, kernel 4.11 or later, and /proc.
 Profiles are limited to 128 mappings and 65536 bytes.

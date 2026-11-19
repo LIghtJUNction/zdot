@@ -29,6 +29,7 @@ mod nr {
     pub const EXECVE: usize = 59;
     pub const EXIT: usize = 60;
     pub const FLOCK: usize = 73;
+    pub const GETEUID: usize = 107;
     pub const FSYNC: usize = 74;
     pub const OPENAT: usize = 257;
     pub const MKDIRAT: usize = 258;
@@ -46,6 +47,7 @@ mod nr {
     pub const EXECVE: usize = 221;
     pub const EXIT: usize = 93;
     pub const FLOCK: usize = 32;
+    pub const GETEUID: usize = 175;
     pub const FSYNC: usize = 82;
     pub const OPENAT: usize = 56;
     pub const MKDIRAT: usize = 34;
@@ -383,7 +385,7 @@ pub fn canonical(fd: i32) -> Result<Path> {
     }
     Ok(value)
 }
-pub fn kind(fd: i32) -> Result<u16> {
+fn metadata(fd: i32) -> Result<[u8; 256]> {
     #[repr(align(8))]
     struct Statx([u8; 256]);
     let mut info = Statx([0; 256]);
@@ -393,7 +395,7 @@ pub fn kind(fd: i32) -> Result<u16> {
             fd as usize,
             c"".as_ptr() as usize,
             0x1000 | 0x100, /* AT_EMPTY_PATH | AT_SYMLINK_NOFOLLOW */
-            1,
+            0x000b,         /* STATX_TYPE | STATX_MODE | STATX_UID */
             info.0.as_mut_ptr() as usize,
             0,
         )
@@ -401,7 +403,21 @@ pub fn kind(fd: i32) -> Result<u16> {
     if n < 0 {
         return Err("statx failed (Linux 4.11 or newer is required)");
     }
-    Ok(u16::from_ne_bytes([info.0[28], info.0[29]]) & 0o170000)
+    Ok(info.0)
+}
+pub fn kind(fd: i32) -> Result<u16> {
+    let info = metadata(fd)?;
+    Ok(u16::from_ne_bytes([info[28], info[29]]) & 0o170000)
+}
+pub fn private_directory(fd: i32) -> Result<()> {
+    let info = metadata(fd)?;
+    let mode = u16::from_ne_bytes([info[28], info[29]]);
+    let owner = u32::from_ne_bytes([info[20], info[21], info[22], info[23]]);
+    let user = unsafe { syscall(nr::GETEUID, 0, 0, 0, 0, 0, 0) } as u32;
+    if mode & 0o170000 != 0o040000 || mode & 0o077 != 0 || owner != user {
+        return Err("state directories must be private (0700) and owned by the current user");
+    }
+    Ok(())
 }
 pub fn exists(base: i32, name: &str) -> Result<bool> {
     match openat(base, name, O_PATH | O_NOFOLLOW, 0) {
@@ -416,10 +432,20 @@ pub fn lock(target: i32) -> Result<Fd> {
     if kind(fd.0)? != 0o100000 {
         return Err("deployment lock is not a regular file");
     }
+    flock(fd.0)?;
+    Ok(fd)
+}
+pub fn lock_directory(target: i32) -> Result<Fd> {
+    let fd = openat(target, ".", O_DIRECTORY | O_NOFOLLOW, 0)
+        .map_err(|_| "cannot open target directory for locking")?;
+    flock(fd.0)?;
+    Ok(fd)
+}
+fn flock(fd: i32) -> Result<()> {
     if unsafe {
         syscall(
             nr::FLOCK,
-            fd.0 as usize,
+            fd as usize,
             2 | 4, /* LOCK_EX | LOCK_NB */
             0,
             0,
@@ -430,7 +456,7 @@ pub fn lock(target: i32) -> Result<Fd> {
     {
         return Err("another zdot operation holds the deployment lock");
     }
-    Ok(fd)
+    Ok(())
 }
 pub unsafe fn exec_git(args: &[*const u8], envp: *const *const u8) -> Result<()> {
     for path in [c"/usr/bin/git", c"/bin/git"] {

@@ -199,6 +199,163 @@ class Dotfiles(unittest.TestCase):
         self.assertEqual((self.repo / "files/a").read_text(), "managed a\n")
         self.assertFalse((self.repo / "files/a").is_symlink())
 
+
+    def test_external_state_read_only_plan_backup_and_roundtrip(self):
+        state = self.home / ".local/state/zdot/suite"
+        args = ("--state-dir", str(state))
+        self.profile("files/a\t.config/a\nfiles/b\t.b\n")
+        (self.home / ".b").write_text("original")
+        (self.home / ".b").chmod(0o640)
+        before = sorted(p.relative_to(self.home).as_posix() for p in self.home.rglob("*"))
+        data = json.loads(self.run_cli("plan", *args, "--backup", "--json").stdout)
+        self.assertEqual(data["state_dir"], str(state))
+        self.run_cli("status", *args, expected=3)
+        self.assertFalse(state.exists())
+        self.assertEqual(before, sorted(p.relative_to(self.home).as_posix() for p in self.home.rglob("*")))
+        self.run_cli("apply", *args, "--backup")
+        self.assertEqual(state.stat().st_mode & 0o777, 0o700)
+        self.assertFalse((self.home / ".zdot-state").exists())
+        self.assertFalse((self.home / ".zdot.lock").exists())
+        self.assertEqual(json.loads(self.run_cli("apply", *args, "--backup", "--json").stdout)["changed"], 0)
+        self.run_cli("status", *args)
+        # Removal uses the saved profile, even if its source is unavailable.
+        (self.repo / "profile.zdot").unlink()
+        self.run_cli("remove", *args)
+        self.assertEqual((self.home / ".b").read_text(), "original")
+        self.assertEqual((self.home / ".b").stat().st_mode & 0o777, 0o640)
+        self.assertFalse((self.home / ".config/a").exists())
+        self.assertEqual(list(state.iterdir()), [])
+        self.run_cli("remove", *args)
+
+    def test_external_state_owner_binds_original_target(self):
+        state = self.base / "state"
+        self.profile("files/a\t.a\n")
+        self.run_cli("apply", "--state-dir", str(state))
+        other = self.base / "other-home"
+        other.mkdir()
+        completed = subprocess.run(
+            [str(BINARY), "remove", "--root", str(self.repo), "--target", str(other),
+             "--state-dir", str(state)], text=True, capture_output=True, env=self.env)
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("owner mismatch", completed.stderr)
+        self.assertTrue((self.home / ".a").is_symlink())
+        self.assertEqual(list(other.iterdir()), [])
+        self.run_cli("remove", "--state-dir", str(state))
+
+    def test_external_state_rejects_unsafe_and_overlapping_paths(self):
+        self.profile("files/a\t.config\n")
+        values = [str(self.repo), str(self.repo / "state"), str(self.home), str(self.base),
+                  str(self.home / ".config/state"), str(self.home / ".config"),
+                  "relative/state", str(self.base) + "/../state", "/", ""]
+        for value in values:
+            with self.subTest(state=value):
+                self.run_cli("apply", "--state-dir", value, expected=2)
+                self.assertEqual(list(self.home.iterdir()), [])
+        self.run_cli("init", "--state-dir", str(self.base / "state"), expected=2, target=False)
+        self.run_cli("sync", "status", "--state-dir", str(self.base / "state"), expected=2, target=False)
+
+    def test_external_state_rejects_symlink_in_any_component(self):
+        outside = self.base / "outside"
+        outside.mkdir(mode=0o700)
+        (outside / "sentinel").write_text("untouched")
+        alias = self.base / "alias"
+        alias.symlink_to(outside, target_is_directory=True)
+        self.profile("files/a\t.a\n")
+        for path in [alias, alias / "new-state"]:
+            for command in ("plan", "apply", "remove"):
+                with self.subTest(path=path, command=command):
+                    self.run_cli(command, "--state-dir", str(path), expected=2)
+        self.assertEqual([p.name for p in outside.iterdir()], ["sentinel"])
+        self.assertEqual(list(self.home.iterdir()), [])
+
+    def test_external_state_requires_private_directory(self):
+        state = self.base / "state"
+        state.mkdir(mode=0o755)
+        self.profile("files/a\t.a\n")
+        self.run_cli("plan", "--state-dir", str(state), expected=2)
+        self.run_cli("apply", "--state-dir", str(state), expected=2)
+        self.assertEqual(list(state.iterdir()), [])
+        self.assertEqual(list(self.home.iterdir()), [])
+        state.chmod(0o700)
+        self.run_cli("apply", "--state-dir", str(state))
+        journal = next(state.iterdir())
+        journal.chmod(0o755)
+        self.run_cli("remove", "--state-dir", str(state), expected=2)
+        self.assertTrue((self.home / ".a").is_symlink())
+        journal.chmod(0o700)
+        self.run_cli("remove", "--state-dir", str(state))
+
+    def test_directory_lock_coordinates_external_and_default_stores(self):
+        state = self.base / "state"
+        self.profile("files/a\t.a\n")
+        fd = os.open(self.home, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            self.run_cli("apply", "--state-dir", str(state), expected=2)
+            self.run_cli("apply", expected=2)
+        finally:
+            os.close(fd)
+        self.assertFalse(state.exists())
+        self.assertEqual(list(self.home.iterdir()), [])
+
+    def test_external_state_honors_existing_legacy_lock(self):
+        state = self.base / "state"
+        self.profile("files/a\t.a\n")
+        with (self.home / ".zdot.lock").open("w") as handle:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            self.run_cli("apply", "--state-dir", str(state), expected=2)
+        self.assertFalse(state.exists())
+        self.assertFalse((self.home / ".a").exists())
+
+    def test_external_state_interrupted_recovery_preserves_changed_files(self):
+        state = self.base / "state"
+        args = ("--state-dir", str(state))
+        self.profile("files/a\t.a\n")
+        (self.home / ".a").write_text("original")
+        self.run_cli("apply", *args, "--backup")
+        journal = next(state.iterdir())
+        (journal / "complete").unlink()
+        (self.home / ".a").unlink()
+        (self.home / ".a").write_text("new local work")
+        self.run_cli("remove", *args, expected=2)
+        self.assertEqual((self.home / ".a").read_text(), "new local work")
+        self.assertEqual((journal / "backups/000").read_text(), "original")
+        (self.home / ".a").unlink()
+        self.run_cli("remove", *args)
+        self.assertEqual((self.home / ".a").read_text(), "original")
+
+    @unittest.skipIf(os.geteuid() == 0, "permission failure needs an unprivileged user")
+    def test_external_state_rollback_restores_originals(self):
+        state = self.base / "state"
+        readonly = self.home / "readonly"
+        readonly.mkdir(mode=0o555)
+        (self.home / ".a").write_text("original")
+        self.profile("files/a\t.a\nfiles/b\t.new/deep/b\nfiles/b\treadonly/b\n")
+        self.run_cli("apply", "--state-dir", str(state), "--backup", expected=2)
+        self.assertEqual((self.home / ".a").read_text(), "original")
+        self.assertFalse((self.home / ".a").is_symlink())
+        self.assertFalse((self.home / ".new").exists())
+        self.assertEqual(list(state.iterdir()), [])
+        self.assertFalse((self.home / ".zdot.lock").exists())
+
+    def test_external_state_cross_device_backup_fails_without_data_loss(self):
+        shared = Path("/dev/shm")
+        if not shared.is_dir() or shared.stat().st_dev == self.home.stat().st_dev:
+            self.skipTest("a writable second filesystem is unavailable")
+        try:
+            temporary = tempfile.TemporaryDirectory(prefix="zdot-state-test-", dir=shared)
+        except OSError:
+            self.skipTest("a writable second filesystem is unavailable")
+        with temporary:
+            state = Path(temporary.name) / "state"
+            self.profile("files/b\t.new/b\nfiles/a\t.a\n")
+            (self.home / ".a").write_text("original")
+            self.run_cli("apply", "--state-dir", str(state), "--backup", expected=2)
+            self.assertEqual((self.home / ".a").read_text(), "original")
+            self.assertFalse((self.home / ".a").is_symlink())
+            self.assertFalse((self.home / ".new").exists())
+            self.assertEqual(list(state.iterdir()), [])
+
     def test_sync_uses_real_git_with_local_bare_remote(self):
         git = shutil.which("git")
         self.assertIsNotNone(git)
