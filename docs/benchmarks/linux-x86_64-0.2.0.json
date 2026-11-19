@@ -1,0 +1,47 @@
+{
+  "schema": "zdot.benchmark.v1",
+  "measured_at": "2026-11-19T22:32:31.864445+00:00",
+  "architecture": "x86_64",
+  "build_note": "Local release build; other development jobs active; warm filesystem cache",
+  "rustc": "rustc 1.100.0 (0ef1bc386 2026-11-09)",
+  "version": "zdot 0.2.0",
+  "binary_bytes": 58344,
+  "binary_sha256": "634a97a942dc707d7acaf2c845ba70b190419792002a9bdc6b26c7bda29dc46d",
+  "wall_time_scope": "Python parent spawn, native execution and wait; warm filesystem cache",
+  "version_wall": {
+    "runs": 50,
+    "median_ms": 0.2747085,
+    "p95_ms": 0.357267,
+    "minimum_ms": 0.196795
+  },
+  "plan_128_wall": {
+    "runs": 50,
+    "median_ms": 7.4717535,
+    "p95_ms": 12.219546,
+    "minimum_ms": 5.70986
+  },
+  "external_state_plan_128_wall": {
+    "runs": 50,
+    "median_ms": 6.7250945,
+    "p95_ms": 11.440846,
+    "minimum_ms": 5.27801
+  },
+  "memory_scope": "128-entry JSON plan blocked on a 4096-byte stdout pipe; /proc smaps_rollup, not an idle daemon or worst-case bound",
+  "memory_samples": [
+    {
+      "rss_kib": 236,
+      "pss_kib": 232
+    },
+    {
+      "rss_kib": 236,
+      "pss_kib": 232
+    },
+    {
+      "rss_kib": 240,
+      "pss_kib": 236
+    }
+  ],
+  "sampled_rss_kib_median": 236,
+  "sampled_pss_kib_median": 232,
+  "source_manifest_sha256": "da945c679e16e53f1b704afaf12b3f0fd4986692e1a5f7e47e16e8225a951920"
+}
