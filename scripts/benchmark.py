@@ -13,6 +13,8 @@ import subprocess
 import tempfile
 import time
 
+from cargo_target import release_binary
+
 ROOT = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--runs", type=int, default=50)
@@ -21,7 +23,7 @@ parser.add_argument("--output", type=Path, default=ROOT / "bench-results.json")
 args = parser.parse_args()
 if not 5 <= args.runs <= 1000:
     parser.error("--runs must be between 5 and 1000")
-binary = ROOT / "target/release/zdot"
+binary = release_binary()
 
 def timings(argv):
     for _ in range(3):

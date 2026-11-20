@@ -1,5 +1,6 @@
 PREFIX ?= $(HOME)/.local
 DESTDIR ?=
+CARGO_TARGET_DIR_RESOLVED = $(shell python3 scripts/cargo_target.py)
 
 .PHONY: build check test fmt benchmark clean
 build:
@@ -9,9 +10,9 @@ check:
 	cargo fmt --check
 	cargo test --lib --locked
 	cargo build --release --locked
-	python3 scripts/check_binary.py target/release/zdot
+	python3 scripts/check_binary.py "$(CARGO_TARGET_DIR_RESOLVED)/release/zdot"
 	cargo clippy --lib --bin zdot --locked -- -D warnings
-	python3 tests/test_cli.py
+	ZDOT_BIN="$(CARGO_TARGET_DIR_RESOLVED)/release/zdot" python3 tests/test_cli.py
 
 test: check
 
@@ -27,7 +28,7 @@ clean:
 .PHONY: install uninstall
 install: build
 	install -d "$(DESTDIR)$(PREFIX)/bin" "$(DESTDIR)$(PREFIX)/share/man/man1" "$(DESTDIR)$(PREFIX)/share/zsh/site-functions" "$(DESTDIR)$(PREFIX)/share/licenses/zdot"
-	install -m755 target/release/zdot "$(DESTDIR)$(PREFIX)/bin/zdot"
+	install -m755 "$(CARGO_TARGET_DIR_RESOLVED)/release/zdot" "$(DESTDIR)$(PREFIX)/bin/zdot"
 	install -m644 packaging/man/zdot.1 "$(DESTDIR)$(PREFIX)/share/man/man1/zdot.1"
 	install -m644 completions/_zdot "$(DESTDIR)$(PREFIX)/share/zsh/site-functions/_zdot"
 	install -m644 LICENSE "$(DESTDIR)$(PREFIX)/share/licenses/zdot/LICENSE"

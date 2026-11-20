@@ -14,7 +14,7 @@ categories = ["command-line-utilities", "no-std"]
 resolver = "3"
 
 [dependencies]
-zclap = { version = "=0.1.4", default-features = false }
+zclap = { version = "=0.1.4", default-features = false, git = "https://github.com/LIghtJUNction/zclap.git" }
 
 [[bin]]
 name = "zdot"
