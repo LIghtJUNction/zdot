@@ -8,11 +8,15 @@ import os
 import tarfile
 import tomllib
 
+from cargo_target import release_binary
+
 ROOT = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("target", choices=("x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"))
-parser.add_argument("--binary", type=Path, default=ROOT / "target/release/zdot")
+parser.add_argument("--binary", type=Path)
 args = parser.parse_args()
+if args.binary is None:
+    args.binary = release_binary()
 version = tomllib.loads((ROOT / "Cargo.toml").read_text())["package"]["version"]
 dist = ROOT / "dist"
 dist.mkdir(exist_ok=True)

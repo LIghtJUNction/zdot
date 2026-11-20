@@ -9,7 +9,13 @@ import subprocess
 import tempfile
 import unittest
 
-BINARY = Path(os.environ.get("ZDOT_BIN", "target/release/zdot")).resolve()
+if "ZDOT_BIN" in os.environ:
+    BINARY = Path(os.environ["ZDOT_BIN"]).resolve()
+else:
+    metadata = json.loads(subprocess.check_output(
+        ["cargo", "metadata", "--locked", "--no-deps", "--format-version=1"],
+        cwd=Path(__file__).resolve().parents[1], text=True))
+    BINARY = Path(metadata["target_directory"]) / "release" / "zdot"
 
 class Dotfiles(unittest.TestCase):
     def setUp(self):
@@ -271,6 +277,7 @@ class Dotfiles(unittest.TestCase):
     def test_external_state_requires_private_directory(self):
         state = self.base / "state"
         state.mkdir(mode=0o755)
+        state.chmod(0o755)  # Establish an unsafe fixture even under a restrictive umask.
         self.profile("files/a\t.a\n")
         self.run_cli("plan", "--state-dir", str(state), expected=2)
         self.run_cli("apply", "--state-dir", str(state), expected=2)
